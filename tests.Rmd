@@ -1,0 +1,186 @@
+
+```{r}
+library(lme4)
+library(ggplot2)
+library(buildmer)
+library(effectsize)
+library(tidyverse)
+library(dplyr)
+library(lmerTest)
+```
+
+# load betapower
+```{r}
+D <- read.csv(file = 'betapower.csv', header=TRUE)
+# average over visual subtasks
+D <- D %>%
+  mutate(task2 = if_else(task=='resting', 'resting', 'visual'))
+D$stv <- as.character(interaction(D$subject, D$task2, D$visit, sep='-'))
+D2 <- D %>%
+  group_by(stv) %>%
+  summarise(rel_beta = mean(rel_beta), n = n(), group=first(group))
+D2 <- separate(data = D2, col = stv, sep='-', into = c("subject", "task", "visit"))
+D2$rel_beta_log <- 10*log10(D2$rel_beta)
+write.csv(D2, 'betapower_for_plots.csv')
+```
+
+# mixed models
+```{r}
+D2.lm3 <- lmer(rel_beta_log~(group+task+visit)^3+(1|subject), data=D2)
+drop1(D2.lm3, test='F')
+
+D2.lm2 <- lmer(rel_beta_log~(group+task+visit)^2+(1|subject), data=D2)
+drop1(D2.lm2, test='F')
+
+D2.lm1 <- lmer(rel_beta_log~1+group+task+visit+(1|subject), data=D2)
+drop1(D2.lm1, test='F')
+```
+
+
+# posthoc t-test
+```{r}
+D3 <- D2 %>%
+  group_by(subject) %>%
+  summarise(rel_beta = mean(rel_beta), n = n(), group=first(group))
+
+D3$rel_beta_log <- 10*log10(D3$rel_beta)
+tt <- t.test(rel_beta_log~group, data=D3, var.equal=TRUE)
+tt
+t_to_d(tt$statistic, tt$parameter)
+```
+
+# load betapower lesion hemisphere
+```{r}
+Dh <- read.csv(file = 'betapower_lesionhemi.csv', header=TRUE)
+Dh <- Dh %>%
+  mutate(task2 = if_else(task=='resting', 'resting', 'visual'))
+Dh$stvl <- as.character(interaction(Dh$subject, Dh$task2, Dh$visit, Dh$lesion, sep='-'))
+Dh2 <- Dh %>%
+  group_by(stvl) %>%
+  summarise(rel_beta = mean(rel_beta), n = n(), group=first(group))
+Dh2 <- separate(data = Dh2, col = stvl, sep='-', into = c("subject", "task", "visit", "lesion"))
+Dh2$rel_beta_log <- 10*log10(Dh2$rel_beta)
+write.csv(Dh2, 'betapower_lesionhemi_for_plots.csv')
+```
+
+# t-tests betapower lesionhemi
+```{r}
+Dh2 <- subset(Dh2, group=='P')
+Dh2V <- subset(Dh2, task == 'visual')
+Dh2V1 <- subset(Dh2V, visit=='visit1')
+cat('visual visit1\n')
+t.test(rel_beta_log~lesion, data=Dh2V1, paired=TRUE)
+cat('visual visit2\n')
+Dh2V2 <- subset(Dh2V, visit=='visit2')
+t.test(rel_beta_log~lesion, data=Dh2V2, paired=TRUE)
+
+Dh2R <- subset(Dh2, task=='resting')
+Dh2R1 <- subset(Dh2R, visit=='visit1')
+cat('resting visit1\n')
+t.test(rel_beta_log~lesion, data=Dh2R1, paired=TRUE)
+Dh2R2 <- subset(Dh2R, visit=='visit2')
+cat('resting visit2\n')
+t.test(rel_beta_log~lesion, data=Dh2R2, paired=TRUE)
+````
+
+# load ERD ERS
+```{r}
+E <- read.csv(file = 'ERD_ERS.csv', header=TRUE)
+E$svm <- as.character(interaction(E$subject, E$visit, E$metric, sep='-'))
+EmeanA <- E %>%
+  group_by(svm) %>%
+  summarise(value = mean(value), n = n(), group=first(group))
+EmeanA <- separate(data = EmeanA, col = svm, sep='-', into = c("subject", "visit", "metric"))
+write.csv(EmeanA, 'ERD_ERS_for_plots.csv')
+```
+
+# mixed models
+```{r}
+Emean <- subset(EmeanA, metric=='ERD'| metric=='ERS')
+Emean$dep <- 100*Emean$value
+
+Emean.lm3 <- lmer(dep~(group+metric+visit)^3+(1|subject), data=Emean)
+summary(Emean.lm3)
+drop1(Emean.lm3)
+
+Emean.lm2 <- lmer(dep~(group+metric+visit)^2+(1|subject), data=Emean)
+drop1(Emean.lm2)
+
+Emean.lm1 <- lmer(dep~1+group+metric+visit+(1|subject), data=Emean)
+drop1(Emean.lm1)
+```
+
+# post-hoc tests
+```{r}
+EmeanS <- subset(Emean, metric=='ERS') %>%
+  group_by(subject) %>%
+  summarise(value = mean(value), n = n(), group=first(group))
+EmeanS$dep <- 100*(EmeanS$value)
+ESC <- subset(EmeanS, group=='C')
+cat('ERS C', mean(ESC$dep), sd(ESC$dep))
+ESP <- subset(EmeanS, group=='P')
+cat('\nERS P', mean(ESP$dep), sd(ESP$dep))
+tt <- t.test(dep~group, data=EmeanS, var.equal=TRUE)
+tt
+t_to_d(tt$statistic, tt$parameter)
+
+EmeanD <- subset(Emean, metric=='ERD') %>%
+  group_by(subject) %>%
+  summarise(value = mean(value), n = n(), group=first(group))
+EmeanD$dep <- 100*(EmeanD$value)
+EDC <- subset(EmeanD, group=='C')
+cat('ERD C', mean(EDC$dep), sd(EDC$dep))
+EDP <- subset(EmeanD, group=='P')
+cat('\nERD P', mean(EDP$dep), sd(EDP$dep))
+tt <- t.test(dep~group, data=EmeanD, var.equal=TRUE)
+tt
+t_to_d(tt$statistic, tt$parameter)
+```
+
+# baseline tests
+```{r}
+# 1st visit
+EmeanB <- subset(EmeanA, metric=='BASE'&visit=='visit1')
+EmeanB$dep <- EmeanB$value
+cat('baseline visit1\n')
+t.test(dep~group, data=EmeanB, var.equal=TRUE)
+EmeanRB <- subset(EmeanA, metric=='RELBASE'&visit=='visit1')
+EmeanRB$dep <- EmeanRB$value
+cat('baseline visit2\n')
+t.test(dep~group, data=EmeanRB, var.equal=TRUE)
+
+# 2nd visit
+EmeanB <- subset(EmeanA, metric=='BASE'&visit=='visit2')
+EmeanB$dep <- EmeanB$value
+cat('relative baseline visit1\n')
+t.test(dep~group, data=EmeanB, var.equal=TRUE)
+EmeanRB <- subset(EmeanA, metric=='RELBASE'&visit=='visit2')
+EmeanRB$dep <- EmeanRB$value
+cat('relative baseline visit2\n')
+t.test(dep~group, data=EmeanRB, var.equal=TRUE)
+```
+
+# load data ERD ERS hemispheric
+```{r}
+Eh <- read.csv(file = 'ERD_ERS_lesionhemi.csv', header=TRUE)
+Eh$svml <- as.character(interaction(Eh$subject, Eh$visit, Eh$metric, Eh$lesion, sep='-'))
+Ehmean <- Eh %>%
+  group_by(svml) %>%
+  summarise(value = mean(value), n = n(), group=first(group))
+Ehmean <- separate(data = Ehmean, col = svml, sep='-', into = c("subject", "visit", "metric", "lesion"))
+Ehmean$dep <- 100*Ehmean$value
+write.csv(Eh, 'ERD_ERS_lesionhemi_for_plots.csv')
+
+EhPS1 <- subset(Ehmean, group=='P'&visit=='visit1'&metric=='ERS')
+EhPS2 <- subset(Ehmean, group=='P'&visit=='visit2'&metric=='ERS')
+EhPD1 <- subset(Ehmean, group=='P'&visit=='visit1'&metric=='ERD')
+EhPD2 <- subset(Ehmean, group=='P'&visit=='visit2'&metric=='ERD')
+cat('P ERS visit1\n')
+t.test(dep~lesion, data=EhPS1, var.equal=TRUE, paired=TRUE)
+cat('P ERS visit2\n')
+t.test(dep~lesion, data=EhPS2, var.equal=TRUE, paired=TRUE)
+cat('P ERD visit1\n')
+t.test(dep~lesion, data=EhPD1, var.equal=TRUE, paired=TRUE)
+cat('P ERD visit2\n')
+t.test(dep~lesion, data=EhPD2, var.equal=TRUE, paired=TRUE)
+```
